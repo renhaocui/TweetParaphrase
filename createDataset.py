@@ -164,9 +164,9 @@ def combineCommTweets(inputFolder, outputFilename):
 
 
 if __name__ == '__main__':
-    createFromFolder('adData', 'commercialTweets.list')
-    # createParaphraseLM('data/pmt.full', 'data/pmt.full.line.lm')
-    # splitLargeFile('data/pmt.full.line.lm', 2)
+    # createFromFolder('adData', 'commercialTweets.list')
+    createParaphraseLM('data/pmt/pmt.full', 'data/pmt/pmt.full.line.lm')
+    #splitLargeFile('data/pmt.full.line.lm', 2)
     # generateContentFiles('data/pmt/pmt.full.line.lm', 'data/pmt/pmt.filtered.content', 10, 1)
-    #combineCommTweets('/Volumes/DATA/Data/adData', 'data/commTweets.json')
-    #createReconstructedParaData('data/commercialTweets.list', 'data/commercialTweets.paraphrase')
+    # combineCommTweets('/Volumes/DATA/Data/adData', 'data/commTweets.json')
+    # createReconstructedParaData('data/commercialTweets.list', 'data/commercialTweets.paraphrase')

@@ -1,8 +1,8 @@
-import en_core_web_sm
+import en_core_web_lg
 #import spacy
 import json
 from spacy import displacy
-nlp = en_core_web_sm.load()
+nlp = en_core_web_lg.load()
 
 def dependencyParse(inputFilename, outputFilename, lenLimit=5):
   print('Loading data...')
@@ -32,7 +32,7 @@ def dependencyParse(inputFilename, outputFilename, lenLimit=5):
 
 if __name__ == '__main__':
     #dependencyParse('data/pmt/pmt.full.line.lm_4-4', 'data/pmt/pmt.full.line.dependency_4-4', 10)
-    results = nlp('So you’re gettin jiggy wit it all day everyday, Will Smith’s Greatest Hits ( more albums) are just $5 on amazon music:'.lower())
+    results = nlp("Ridley Scott says he plans to make 6 more alien films")
     for result in results:
         print(result.text, result.tag_, result.head.text, result.dep_)
     displacy.serve(results, style='dep')

@@ -3,12 +3,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 from nltk.translate.bleu_score import sentence_bleu
 from rouge_score import rouge_scorer
 import json
+from transformers import GPT2LMHeadModel, GPT2TokenizerFast
+import torch
+import math
 
 
 def computeSimilarity(originalTextList, paraphraseTextList):
     model = SentenceTransformer('bert-base-nli-mean-tokens')
-    # model = None
-    # model = SentenceTransformer('roberta-large-nli-stsb-mean-tokens')
+    #model = SentenceTransformer('roberta-large-nli-stsb-mean-tokens')
 
     outputScores = []
     originalSentEmbeddings = model.encode(originalTextList)
@@ -39,29 +41,19 @@ def computeROUGE(originalTextList, paraphraseTextList):
     return outputScores
 
 
-def completeEvaluate(originalTextFilename, generatedTextFilename, reportFilename, repeatTimes=1, split=False):
+def completeEvaluate(originalTextFilename, generatedTextFilename, reportFilename):
     originalList = []
     paraphraseList = []
-    with open(originalTextFilename, 'r') as fr:
-        for line in fr:
-            for j in range(repeatTimes):
-                originalList.append(line.strip())
-    with open(originalTextFilename + '.listed', 'w') as fo:
-        for data in originalList:
-            fo.write(data + '\n')
-    with open(generatedTextFilename, 'r') as fr:
-        for line in fr:
-            if split:
-                paraphraseList += line.strip().split('\t')
-            else:
-                paraphraseList.append(line.strip())
-    if split:
-        with open(generatedTextFilename + '.listed', 'w') as fo:
-            for data in paraphraseList:
-                fo.write(data + '\n')
+    originalFile = open(originalTextFilename, 'r')
+    generatedFile = open(generatedTextFilename, 'r')
+    for originalLine, generatedLine in zip(originalFile, generatedFile):
+        if '<ERROR>' not in generatedLine:
+            paraphraseList.append(generatedLine.strip())
+            originalList.append(originalLine.strip())
+    originalFile.close()
+    generatedFile.close()
 
     print(len(originalList), len(paraphraseList))
-
     BLEUScores = computeBLEU(originalList, paraphraseList)
     ROUGEScores = computeROUGE(originalList, paraphraseList)
     SimilarityScores = computeSimilarity(originalList, paraphraseList)
@@ -76,37 +68,81 @@ def completeEvaluate(originalTextFilename, generatedTextFilename, reportFilename
     print('DONE')
 
 
-def verifyKeyComponents(generatedFilename, itemFilename, reportFilename, repeatTimes=5):
-    itemData = []
-    with open(itemFilename, 'r') as fr:
-        for line in fr:
-            for j in range(repeatTimes):
-                itemData.append(json.loads(line.strip())['NNPTK'])
-
-    with open(itemFilename + '.list', 'w') as fo:
-        for item in itemData:
-            fo.write(item + '\n')
-
-    reportFile = open(reportFilename, 'w')
-    count = 0
-    with open(generatedFilename, 'r') as fr:
-        for lineIndex, line in enumerate(fr):
-            if itemData[lineIndex].lower() in line.lower():
-                reportFile.write('True\n')
-                count += 1
+def verifyKeyComponents(generatedFilename, itemFilename, reportFilename):
+    generatedFile = open(generatedFilename, 'r')
+    itemFile = open(itemFilename, 'r')
+    containedCount = 0
+    totalCount = 0
+    with open(reportFilename, 'w') as reportFile:
+        for generatedLine, itemLine in zip(generatedFile, itemFile):
+            if '<ERROR>' not in generatedLine:
+                itemData = json.loads(itemLine.strip())
+                itemList = itemData['<RST>'] + itemData['<EXN>']
+                lineItemCount = 0
+                lineTotalCount = 0
+                for item in itemList:
+                    lineTotalCount += 1
+                    if item.lower() in generatedLine.lower():
+                        lineItemCount += 1
+                containedCount += (lineItemCount/lineTotalCount)
+                totalCount += 1
+                reportFile.write(str(lineItemCount/lineTotalCount)+'\n')
             else:
-                reportFile.write('False\n')
+                reportFile.write(generatedLine)
+
+    itemFile.close()
+    generatedFile.close()
+
+    print('Coverage: ' + str(containedCount/totalCount))
+
+
+def generatePerplexity(generatedFilename, reportFilename):
+    device = 'cuda'
+    model_id = 'gpt2-medium'
+    model = GPT2LMHeadModel.from_pretrained(model_id).to(device)
+    model.eval()
+    tokenizer = GPT2TokenizerFast.from_pretrained(model_id)
+
+    scoreSum = 0
+    totalCount = 0
+    reportFile = open(reportFilename, 'w')
+    #totalData = ["ivent to the sound of a couple of fuses : 29 per cent of the fine is for the use of this."]
+    with open(generatedFilename, 'r') as fi:
+        for index, line in enumerate(fi):
+            if index%5000 == 0:
+                print(index)
+            if '<ERROR>' in line:
+                reportFile.write(line)
+            else:
+                input_sentence = line.strip()
+                input_ids = torch.tensor(tokenizer.encode(input_sentence)).unsqueeze(0)
+                input_ids = input_ids.to(device)
+                with torch.no_grad():
+                    outputs = model(input_ids, labels=input_ids)
+                loss, logits = outputs[:2]
+                ppl = math.exp(loss)
+                scoreSum += ppl
+                totalCount += 1
+                reportFile.write(str(ppl)+'\n')
+
     reportFile.close()
-    print(len(itemData))
-    print(lineIndex)
-    print(count)
+    print(scoreSum/totalCount)
+    print(index)
+    print('DONE')
+    return None
+
 
 
 if __name__ == '__main__':
-    completeEvaluate('drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/commTweets.NNP.tokenized.sampled.original',
-                     'drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/commTweets.NNP.tokenized.sampled.original.copynet',
-                     'drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/commTweets.sampled.copynet.report', repeatTimes=1, split=False)
+    completeEvaluate('drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/test_single/commTweets.content',
+                     'drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/test_single/results/commTweets.full.copynet',
+                     'drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/test_single/reports/commTweets.full.copynet.performance',
+                     repeatTimes=3, split=True)
 
-    verifyKeyComponents('drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/commTweets.NNP.tokenized.sampled.original.copynet',
-                        'drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/commTweets.NNP.tokenized.sampled.items',
-                        'drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/commTweets.sampled.original.contained.copynet.results', repeatTimes=1)
+    verifyKeyComponents('drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/test_single/results/commTweets.full.copynet',
+                        'drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/test_single/commTweets.item',
+                        'drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/test_single/reports/commTweets.full.copynet.verify',
+                        repeatTimes=3)
+
+    generatePerplexity('drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/test_single/results/commTweets.full.copynet',
+                       'drive/My Drive/Cui_workspace/Data/TweetParaphrase/commTweets/test_single/reports/commTweets.full.copynet.perplexity')
